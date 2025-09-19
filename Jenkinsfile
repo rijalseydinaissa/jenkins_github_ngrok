@@ -21,20 +21,21 @@ pipeline {
         maven 'Maven-3.9.0'
     }
 
-    stage('📥 Checkout') {
-        steps {
-            echo '🔄 Récupération du code source...'
-            checkout scm
-            script {
-                dir(env.WORKSPACE) {
-                    env.GIT_COMMIT_MSG = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
+    stages {
+        stage('📥 Checkout') {
+            steps {
+                echo '🔄 Récupération du code source...'
+                checkout scm
+                script {
+                    dir(env.WORKSPACE) {
+                        env.GIT_COMMIT_MSG = sh(
+                            script: 'git log -1 --pretty=%B',
+                            returnStdout: true
+                        ).trim()
+                    }
                 }
             }
         }
-    }
 
         stage('🔍 Analyse Environnement') {
             steps {
@@ -104,10 +105,10 @@ pipeline {
                 echo '🚀 Déploiement local...'
                 script {
                     sh """
-                        docker run -d \
-                            --name ${CONTAINER_NAME} \
-                            -p ${APP_PORT}:${APP_PORT} \
-                            -e SPRING_PROFILES_ACTIVE=prod \
+                        docker run -d \\
+                            --name ${CONTAINER_NAME} \\
+                            -p ${APP_PORT}:${APP_PORT} \\
+                            -e SPRING_PROFILES_ACTIVE=prod \\
                             ${DOCKER_IMAGE}
                     """
 
