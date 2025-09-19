@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Configuration Java et Maven
-        JAVA_HOME = tool 'JDK-17'  // Downgradé à 17 (ajoutez le tool si absent)
+        JAVA_HOME = tool 'JDK-21'  // Aligné sur tool installé
         MAVEN_HOME = tool 'Maven-3.9.0'
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
@@ -17,7 +17,7 @@ pipeline {
     }
 
     tools {
-        jdk 'JDK-17'  // Downgradé
+        jdk 'JDK-21'  // Aligné
         maven 'Maven-3.9.0'
     }
 
@@ -48,8 +48,8 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    if (!javaVersion.contains('17')) {  // Changé à '17'
-                        error("❌ Java 17 requis, trouvé: ${javaVersion}")
+                    if (!javaVersion.contains('21')) {
+                        error("❌ Java 21 requis, trouvé: ${javaVersion}")
                     } else {
                         echo "✅ Java version OK: ${javaVersion}"
                     }
@@ -78,7 +78,7 @@ pipeline {
         stage('🔧 Compile') {
             steps {
                 echo '🔧 Compilation...'
-                sh 'mvn compile -Dmaven.compiler.source=17 -Dmaven.compiler.target=17'  // Changé à 17
+                sh 'mvn compile -Dmaven.compiler.source=21 -Dmaven.compiler.target=21'  // Aligné
             }
         }
 
