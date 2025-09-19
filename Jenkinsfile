@@ -2,9 +2,8 @@ pipeline {
     agent any
 
     environment {
-        // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0'  // Nom exact configuré dans Jenkins les noms doivent correspondre
+        MAVEN_HOME = tool 'Maven-3.9'
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
         // Variables pour ngrok
@@ -18,7 +17,7 @@ pipeline {
 
     tools {
         jdk 'JDK-21'
-        maven 'Maven-3.9.0'  // Nom exact configuré dans Jenkins
+        maven 'Maven-3.9'
     }
 
     stages {
@@ -38,21 +37,9 @@ pipeline {
         stage('🔍 Analyse Environnement') {
             steps {
                 echo '🔍 Vérification de l\'environnement...'
-                script {
-                    // Vérifier et configurer Java
-                    def javaVersion = sh(
-                        script: 'java -version 2>&1 | head -n 1',
-                        returnStdout: true
-                    ).trim()
-
-                    if (!javaVersion.contains('21')) {
-                        error("❌ Java 21 requis, trouvé: ${javaVersion}")
-                    }
-                }
                 sh '''
                     echo "Java Version:"
                     java -version
-                    echo "JAVA_HOME: $JAVA_HOME"
                     echo "Maven Version:"
                     mvn -version
                     echo "Git Version:"

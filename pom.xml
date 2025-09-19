@@ -62,24 +62,33 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <mainClass>com.example.Application</mainClass>
+                    <!-- Activer preview features pour l'exécution -->
+                    <jvmArguments>--enable-preview</jvmArguments>
                 </configuration>
             </plugin>
 
-            <!-- Compiler Plugin -->
+            <!-- Compiler Plugin avec preview features -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
                     <release>${java.version}</release>
+                    <!-- ACTIVER LES PREVIEW FEATURES -->
+                    <compilerArgs>
+                        <arg>--enable-preview</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
 
-            <!-- Tests Plugin -->
+            <!-- Tests Plugin avec preview features -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.1.2</version>
+                <configuration>
+                    <argLine>--enable-preview</argLine>
+                </configuration>
             </plugin>
         </plugins>
     </build>
