@@ -1,4 +1,4 @@
-# Étape 1 : Build
+# Étape 1 : Build importer l'image de maven
 FROM maven:3.9.0-eclipse-temurin-21 AS build
 
 WORKDIR /app
