@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    options {
-        skipDefaultCheckout()  // Évite le checkout implicite, car géré manuellement
-    }
-
     environment {
         // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
@@ -25,17 +21,23 @@ pipeline {
         maven 'Maven-3.9.0'
     }
 
-    stages {  // ← AJOUTÉ : Bloc obligatoire pour envelopper tous les stages
+    stages {
         stage('📥 Checkout') {
             steps {
-                echo '🔄 Récupération du code source...'  // Optionnel, car déjà fait
+                // Checkout implicite géré par Jenkins – pas besoin d'explicite
                 script {
-                    // Pas besoin de dir(env.WORKSPACE) – on y est déjà
-                    env.GIT_COMMIT_MSG = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
-                    echo "Commit message: ${env.GIT_COMMIT_MSG}"
+                    try {
+                        env.GIT_COMMIT_MSG = sh(
+                            script: 'git log -1 --pretty=%B',
+                            returnStdout: true
+                        ).trim()
+                        echo "✅ Commit message: ${env.GIT_COMMIT_MSG}"
+                    } catch (Exception e) {
+                        env.GIT_COMMIT_MSG = 'Commit inconnu (erreur Git)'
+                        echo "⚠️ ${env.GIT_COMMIT_MSG} - Détail: ${e.getMessage()}"
+                        // Optionnel: retry avec checkout scm si besoin
+                        // checkout scm
+                    }
                 }
             }
         }
@@ -165,7 +167,7 @@ pipeline {
                 }
             }
         }
-    }  // ← FERME le bloc stages
+    }
 
     post {
         always {
