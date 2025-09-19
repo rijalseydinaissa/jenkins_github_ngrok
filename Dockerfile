@@ -1,26 +1,20 @@
-FROM openjdk:21-jdk-slim
-
-LABEL maintainer="votre-email@example.com"
-LABEL description="Application Java 21 avec Spring Boot"
+# Étape 1 : Build
+FROM maven:3.9.0-eclipse-temurin-21 AS build
 
 WORKDIR /app
-
-# Copier les fichiers Maven
 COPY pom.xml .
 COPY src ./src
-
-# Installer Maven
-RUN apt-get update && apt-get install -y maven
-
-# Build de l'application
 RUN mvn clean package -DskipTests
 
-# Exposer le port
+# Étape 2 : Runtime
+FROM eclipse-temurin:21-jdk-jammy
+
+WORKDIR /app
+COPY --from=build /app/target/mon-app-java-1.0.0.jar app.jar
+
 EXPOSE 8080
 
-# Variables d'environnement
 ENV JAVA_OPTS="-Xmx512m -Xms256m"
 ENV SERVER_PORT=8080
 
-# Commande de démarrage
-CMD ["java", "--enable-preview", "-jar", "target/mon-app-java-1.0.0.jar"]
+ENTRYPOINT ["sh", "-c", "java --enable-preview $JAVA_OPTS -jar app.jar"]
