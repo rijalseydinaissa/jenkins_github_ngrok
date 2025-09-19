@@ -85,7 +85,7 @@ pipeline {
             post {
                 always {
                     // Publier les résultats des tests
-                    publishTestResults testResultsPattern: 'target/surefire-reports/*.xml'
+                    junit 'target/surefire-reports/*.xml'
                     archiveArtifacts artifacts: 'target/surefire-reports/**', allowEmptyArchive: true
                 }
             }
