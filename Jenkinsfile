@@ -21,21 +21,19 @@ pipeline {
         maven 'Maven-3.9.0'
     }
 
-    stages {
-        stage('📥 Checkout') {
-            steps {
-                echo '🔄 Récupération du code source...'
-                checkout scm
-                script {
-                    dir(env.WORKSPACE) {
-                        env.GIT_COMMIT_MSG = sh(
-                            script: 'git log -1 --pretty=%B',
-                            returnStdout: true
-                        ).trim()
-                    }
-                }
-            }
-        }
+   stage('📥 Checkout') {
+       steps {
+           echo '🔄 Récupération du code source...'  // Optionnel, car déjà fait
+           script {
+               // Pas besoin de dir(env.WORKSPACE) – on y est déjà
+               env.GIT_COMMIT_MSG = sh(
+                   script: 'git log -1 --pretty=%B',
+                   returnStdout: true
+               ).trim()
+               echo "Commit message: ${env.GIT_COMMIT_MSG}"
+           }
+       }
+   }
 
         stage('🔍 Analyse Environnement') {
             steps {
