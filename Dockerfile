@@ -1,5 +1,5 @@
-# Étape 1 : Build 
-FROM maven:3.9.0-eclipse-temurin-21 AS build
+# Étape 1 : Build
+FROM maven:3.9.0-eclipse-temurin-21-jammy AS build
 
 WORKDIR /app
 COPY pom.xml .
@@ -7,7 +7,7 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Étape 2 : Runtime
-FROM eclipse-temurin:21-jdk-jammy
+FROM eclipse-temurin:21.0.6-jdk-jammy
 
 WORKDIR /app
 COPY --from=build /app/target/mon-app-java-1.0.0.jar app.jar
