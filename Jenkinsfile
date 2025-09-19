@@ -21,12 +21,12 @@ pipeline {
         maven 'Maven-3.9.0'
     }
 
-    stages {
-        stage('📥 Checkout') {
-            steps {
-                echo '🔄 Récupération du code source...'
-                checkout scm
-                script {
+    stage('📥 Checkout') {
+        steps {
+            echo '🔄 Récupération du code source...'
+            checkout scm
+            script {
+                dir(env.WORKSPACE) {
                     env.GIT_COMMIT_MSG = sh(
                         script: 'git log -1 --pretty=%B',
                         returnStdout: true
@@ -34,6 +34,7 @@ pipeline {
                 }
             }
         }
+    }
 
         stage('🔍 Analyse Environnement') {
             steps {
@@ -93,7 +94,7 @@ pipeline {
                         docker rm ${CONTAINER_NAME} || true
                         docker rmi ${DOCKER_IMAGE} || true
                     '''
-                    sh "docker build -t ${DOCKER_IMAGE} ."
+                    sh "docker build -t ${DOCKER_IMAGE} ${env.WORKSPACE}"
                 }
             }
         }
