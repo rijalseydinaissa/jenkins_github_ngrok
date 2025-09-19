@@ -28,13 +28,13 @@
     </parent>
 
     <dependencies>
-        <!-- Web -->
+        <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Actuator -->
+        <!-- Spring Boot Actuator -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -46,6 +46,7 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -56,32 +57,29 @@
 
     <build>
         <plugins>
-            <!-- Spring Boot Plugin -->
+            <!-- Spring Boot plugin -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <mainClass>com.example.Application</mainClass>
-                    <!-- Activer preview features pour l'exécution -->
-                    <jvmArguments>--enable-preview</jvmArguments>
                 </configuration>
             </plugin>
 
-            <!-- Compiler Plugin avec preview features -->
+            <!-- Compiler avec preview -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
                     <release>${java.version}</release>
-                    <!-- ACTIVER LES PREVIEW FEATURES -->
                     <compilerArgs>
                         <arg>--enable-preview</arg>
                     </compilerArgs>
                 </configuration>
             </plugin>
 
-            <!-- Tests Plugin avec preview features -->
+            <!-- Tests avec preview -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
