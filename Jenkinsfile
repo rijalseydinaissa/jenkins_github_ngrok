@@ -1,150 +1,139 @@
 pipeline {
     agent any
 
-    environment {
-        JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0'
-        PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
-
-        NGROK_TOKEN = credentials('ngrok-token')
-        APP_PORT = '8080'
-
-        DOCKER_IMAGE = "mon-app-java:${BUILD_NUMBER}"
-        CONTAINER_NAME = "mon-app-container"
+    tools {
+        maven 'Maven-3.9.0'
+        jdk 'JDK-21'
     }
 
-    tools {
-        jdk 'JDK-21'
-        maven 'Maven-3.9.0'
+    environment {
+        GITHUB_CREDENTIALS = 'github-credentials'
+        APP_NAME = 'my-java-app'
+        APP_PORT = '8080'
+        NGROK_PORT = '8080'
     }
 
     stages {
-        stage('📥 Checkout') {
+        stage('🔍 Checkout') {
             steps {
+                echo '📥 Récupération du code source...'
                 checkout scm
-                script {
-                    env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
-                    echo "✅ Commit message: ${env.GIT_COMMIT_MSG}"
-                }
-            }
-        }
-
-        stage('🔍 Analyse Environnement') {
-            steps {
-                sh '''
-#!/bin/bash
-echo "Java Version:"
-java -version
-echo "JAVA_HOME: $JAVA_HOME"
-echo "Maven Version:"
-mvn -version
-echo "Git Version:"
-git --version
-'''
             }
         }
 
         stage('🧹 Clean') {
-            steps { sh 'mvn clean' }
+            steps {
+                echo '🧹 Nettoyage du workspace...'
+                sh 'mvn clean'
+            }
         }
 
-        stage('🔧 Compile') {
-            steps { sh 'mvn compile -Dmaven.compiler.source=21 -Dmaven.compiler.target=21' }
+        stage('📦 Compile') {
+            steps {
+                echo '⚙️ Compilation du projet...'
+                sh 'mvn compile'
+            }
+        }
+
+        stage('🧪 Test') {
+            steps {
+                echo '🧪 Exécution des tests...'
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
         }
 
         stage('📦 Package') {
             steps {
+                echo '📦 Création du package...'
                 sh 'mvn package -DskipTests'
-                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
 
-        stage('🐳 Docker Build') {
+        stage('🛑 Stop Previous Deployment') {
             steps {
-                sh '''
-#!/bin/bash
-docker stop "${CONTAINER_NAME}" || true
-docker rm "${CONTAINER_NAME}" || true
-docker rmi "${DOCKER_IMAGE}" || true
-docker build -t "${DOCKER_IMAGE}" .
-'''
+                echo '🛑 Arrêt de la précédente instance...'
+                script {
+                    sh '''
+                        # Tuer les processus Java précédents
+                        pkill -f "java.*my-java-app" || true
+                        # Tuer ngrok précédent
+                        pkill ngrok || true
+                        sleep 5
+                    '''
+                }
             }
         }
 
-        stage('🚀 Deploy Local') {
+        stage('🚀 Deploy') {
             steps {
-                sh '''
-#!/bin/bash
-docker run -d \
-    --name "${CONTAINER_NAME}" \
-    -p "${APP_PORT}:${APP_PORT}" \
-    -e SPRING_PROFILES_ACTIVE=prod \
-    "${DOCKER_IMAGE}"
+                echo '🚀 Déploiement de l\'application...'
+                script {
+                    sh '''
+                        # Rendre le script exécutable
+                        chmod +x scripts/deploy.sh scripts/start-ngrok.sh
 
-timeout=60
-while [ $timeout -gt 0 ]; do
-    if curl -f http://localhost:${APP_PORT}/health > /dev/null 2>&1; then
-        echo "✅ Application démarrée!"
+                        # Lancer le déploiement
+                        ./scripts/deploy.sh
+
+                        # Attendre que l'application démarre
+                        sleep 15
+
+                        # Lancer ngrok
+                        ./scripts/start-ngrok.sh
+
+                        # Attendre que ngrok se connecte
+                        sleep 10
+                    '''
+                }
+            }
+        }
+
+        stage('✅ Health Check') {
+            steps {
+                echo '✅ Vérification de la santé de l\'application...'
+                script {
+                    sh '''
+                        # Test local
+                        curl -f http://localhost:8080/health || exit 1
+
+                        # Récupérer l'URL ngrok
+                        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for tunnel in data['tunnels']:
+    if tunnel['proto'] == 'https':
+        print(tunnel['public_url'])
         break
-    fi
-    echo "⏳ En attente... ($timeout s restants)"
-    sleep 5
-    timeout=$((timeout-5))
-done
+" 2>/dev/null || echo "URL ngrok non disponible")
 
-if [ $timeout -le 0 ]; then
-    echo "❌ Timeout: application non démarrée"
-    exit 1
-fi
-'''
-            }
-        }
+                        echo "🌐 Application disponible localement : http://localhost:8080"
+                        echo "🌍 Application disponible publiquement : $NGROK_URL"
 
-        stage('🌐 Expose via ngrok') {
-            steps {
-                sh '''
-#!/bin/bash
-pkill ngrok || true
-ngrok config add-authtoken "$NGROK_TOKEN"
-nohup ngrok http "${APP_PORT}" --log=stdout > ngrok.log 2>&1 &
-sleep 10
-
-NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
-if [ -n "$NGROK_URL" ]; then
-    echo "🌐 Accessible sur: $NGROK_URL"
-    echo "$NGROK_URL" > ngrok_url.txt
-else
-    echo "❌ Impossible de récupérer l'URL ngrok"
-    cat ngrok.log
-    exit 1
-fi
-'''
+                        # Test de l'URL publique si disponible
+                        if [ "$NGROK_URL" != "URL ngrok non disponible" ]; then
+                            curl -f "$NGROK_URL/health" || echo "⚠️  URL publique non accessible immédiatement"
+                        fi
+                    '''
+                }
             }
         }
     }
 
     post {
         always {
-            echo '🧹 Nettoyage final...'
-            archiveArtifacts artifacts: '*.log', allowEmptyArchive: true
+            echo '📊 Archivage des artefacts...'
+            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+
+            echo '🧹 Nettoyage...'
             cleanWs()
         }
         success {
-            script {
-                def ngrokUrl = ""
-                try { ngrokUrl = readFile('ngrok_url.txt').trim() } catch (Exception e) { ngrokUrl = "URL non disponible" }
-                emailext(
-                    subject: "✅ Déploiement réussi - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                    body: """
-                        <h2>🎉 Déploiement réussi!</h2>
-                        <p>Build: #${env.BUILD_NUMBER}</p>
-                        <p>Commit: ${env.GIT_COMMIT_MSG}</p>
-                        <p>URL publique: <a href="${ngrokUrl}">${ngrokUrl}</a></p>
-                    """,
-                    to: '${DEFAULT_RECIPIENTS}',
-                    mimeType: 'text/html'
-                )
-            }
+            echo '✅ Pipeline exécuté avec succès !'
         }
         failure {
             echo '❌ Échec du pipeline'
