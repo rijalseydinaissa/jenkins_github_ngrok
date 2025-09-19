@@ -1,4 +1,4 @@
-# Étape 1 : Build pour construire l'image
+# Étape 1 : Build 
 FROM maven:3.9.0-eclipse-temurin-21 AS build
 
 WORKDIR /app
