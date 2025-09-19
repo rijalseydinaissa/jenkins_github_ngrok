@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        maven 'Maven-3.9.0'
-        jdk 'JDK-21'
+        maven 'Maven-3.8'
+        jdk 'JDK-17'
     }
 
     environment {
@@ -11,6 +11,8 @@ pipeline {
         APP_NAME = 'my-java-app'
         APP_PORT = '8080'
         NGROK_PORT = '8080'
+        DOCKER_IMAGE = 'my-java-app:latest'
+        USE_DOCKER = 'false' // Changer à 'true' pour utiliser Docker
     }
 
     stages {
@@ -37,12 +39,20 @@ pipeline {
 
         stage('🧪 Test') {
             steps {
-                echo '🧪 Exécution des tests...'
-                sh 'mvn test'
+                echo '🧪 Exécution des tests unitaires...'
+                sh 'mvn test -Dmaven.test.failure.ignore=false'
             }
             post {
                 always {
-                    junit '**/target/surefire-reports/*.xml'
+                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    publishHTML([
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'target/surefire-reports',
+                        reportFiles: '*.html',
+                        reportName: 'Test Report'
+                    ])
                 }
             }
         }
@@ -54,17 +64,41 @@ pipeline {
             }
         }
 
+        stage('🐳 Docker Build') {
+            when {
+                environment name: 'USE_DOCKER', value: 'true'
+            }
+            steps {
+                echo '🐳 Construction de l\'image Docker...'
+                script {
+                    sh "docker build -t ${DOCKER_IMAGE} ."
+                }
+            }
+        }
+
         stage('🛑 Stop Previous Deployment') {
             steps {
                 echo '🛑 Arrêt de la précédente instance...'
                 script {
-                    sh '''
-                        # Tuer les processus Java précédents
-                        pkill -f "java.*my-java-app" || true
-                        # Tuer ngrok précédent
-                        pkill ngrok || true
-                        sleep 5
-                    '''
+                    if (env.USE_DOCKER == 'true') {
+                        sh '''
+                            # Arrêter et supprimer les conteneurs Docker existants
+                            docker stop my-java-app-container || true
+                            docker rm my-java-app-container || true
+
+                            # Tuer ngrok précédent
+                            pkill ngrok || true
+                            sleep 5
+                        '''
+                    } else {
+                        sh '''
+                            # Tuer les processus Java précédents
+                            pkill -f "java.*my-java-app" || true
+                            # Tuer ngrok précédent
+                            pkill ngrok || true
+                            sleep 5
+                        '''
+                    }
                 }
             }
         }
@@ -73,20 +107,26 @@ pipeline {
             steps {
                 echo '🚀 Déploiement de l\'application...'
                 script {
+                    if (env.USE_DOCKER == 'true') {
+                        sh '''
+                            # Déploiement avec Docker
+                            docker run -d --name my-java-app-container -p 8080:8080 ${DOCKER_IMAGE}
+
+                            # Attendre que le conteneur démarre
+                            sleep 20
+                        '''
+                    } else {
+                        sh '''
+                            # Déploiement traditionnel
+                            chmod +x scripts/deploy.sh scripts/start-ngrok.sh
+                            ./scripts/deploy.sh
+                            sleep 15
+                        '''
+                    }
+
+                    // Lancer ngrok dans tous les cas
                     sh '''
-                        # Rendre le script exécutable
-                        chmod +x scripts/deploy.sh scripts/start-ngrok.sh
-
-                        # Lancer le déploiement
-                        ./scripts/deploy.sh
-
-                        # Attendre que l'application démarre
-                        sleep 15
-
-                        # Lancer ngrok
                         ./scripts/start-ngrok.sh
-
-                        # Attendre que ngrok se connecte
                         sleep 10
                     '''
                 }
@@ -127,7 +167,7 @@ for tunnel in data['tunnels']:
     post {
         always {
             echo '📊 Archivage des artefacts...'
-            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            archiveArtifacts artifacts: 'target/*.jar', fingerprint: true, allowEmptyArchive: true
 
             echo '🧹 Nettoyage...'
             cleanWs()
