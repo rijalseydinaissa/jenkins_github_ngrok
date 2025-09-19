@@ -24,7 +24,6 @@ public class HelloController {
     @GetMapping("/hello/{name}")
     public Map<String, String> hello(@PathVariable String name) {
         return Map.of(
-                "greeting", STR."Bonjour \{name}!",  // Java 21 String Templates
                 "timestamp", LocalDateTime.now().toString()
         );
     }
