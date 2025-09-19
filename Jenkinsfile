@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Configuration Java et Maven
-        JAVA_HOME = tool 'JDK-21'  // Assure-toi que JDK-21 est configuré dans Jenkins
+        JAVA_HOME = tool 'JDK-21'
         MAVEN_HOME = tool 'Maven-3.9.0'
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
@@ -43,14 +43,15 @@ pipeline {
                     }
                 }
                 sh '''
-                    echo "Java Version:"
-                    java -version
-                    echo "JAVA_HOME: $JAVA_HOME"
-                    echo "Maven Version:"
-                    mvn -version
-                    echo "Git Version:"
-                    git --version
-                '''
+#!/bin/bash
+echo "Java Version:"
+java -version
+echo "JAVA_HOME: $JAVA_HOME"
+echo "Maven Version:"
+mvn -version
+echo "Git Version:"
+git --version
+'''
             }
         }
 
@@ -73,11 +74,12 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        docker stop ${CONTAINER_NAME} || true
-                        docker rm ${CONTAINER_NAME} || true
-                        docker rmi ${DOCKER_IMAGE} || true
-                        docker build -t ${DOCKER_IMAGE} ${env.WORKSPACE}
-                    '''
+#!/bin/bash
+docker stop ${CONTAINER_NAME} || true
+docker rm ${CONTAINER_NAME} || true
+docker rmi ${DOCKER_IMAGE} || true
+docker build -t ${DOCKER_IMAGE} ${env.WORKSPACE}
+'''
                 }
             }
         }
@@ -86,28 +88,31 @@ pipeline {
             steps {
                 script {
                     sh """
-                        docker run -d \\
-                            --name ${CONTAINER_NAME} \\
-                            -p ${APP_PORT}:${APP_PORT} \\
-                            -e SPRING_PROFILES_ACTIVE=prod \\
-                            ${DOCKER_IMAGE}
-                    """
+#!/bin/bash
+docker run -d \\
+    --name ${CONTAINER_NAME} \\
+    -p ${APP_PORT}:${APP_PORT} \\
+    -e SPRING_PROFILES_ACTIVE=prod \\
+    ${DOCKER_IMAGE}
+"""
                     sh '''
-                        timeout=60
-                        while [ $timeout -gt 0 ]; do
-                            if curl -f http://localhost:8080/health > /dev/null 2>&1; then
-                                echo "✅ Application démarrée!"
-                                break
-                            fi
-                            echo "⏳ En attente... ($timeout s restants)"
-                            sleep 5
-                            timeout=$((timeout-5))
-                        done
-                        if [ $timeout -le 0 ]; then
-                            echo "❌ Timeout: application non démarrée"
-                            exit 1
-                        fi
-                    '''
+#!/bin/bash
+timeout=60
+while [ $timeout -gt 0 ]; do
+    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+        echo "✅ Application démarrée!"
+        break
+    fi
+    echo "⏳ En attente... ($timeout s restants)"
+    sleep 5
+    timeout=$((timeout-5))
+done
+
+if [ $timeout -le 0 ]; then
+    echo "❌ Timeout: application non démarrée"
+    exit 1
+fi
+'''
                 }
             }
         }
@@ -115,21 +120,23 @@ pipeline {
         stage('🌐 Expose via ngrok') {
             steps {
                 script {
-                    sh 'pkill ngrok || true'
-                    sh 'ngrok config add-authtoken $NGROK_TOKEN'
-                    sh 'nohup ngrok http 8080 --log=stdout > ngrok.log 2>&1 &'
                     sh '''
-                        sleep 10
-                        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
-                        if [ -n "$NGROK_URL" ]; then
-                            echo "🌐 Accessible sur: $NGROK_URL"
-                            echo "$NGROK_URL" > ngrok_url.txt
-                        else
-                            echo "❌ Impossible de récupérer l'URL ngrok"
-                            cat ngrok.log
-                            exit 1
-                        fi
-                    '''
+#!/bin/bash
+pkill ngrok || true
+ngrok config add-authtoken $NGROK_TOKEN
+nohup ngrok http ${APP_PORT} --log=stdout > ngrok.log 2>&1 &
+sleep 10
+
+NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
+if [ -n "$NGROK_URL" ]; then
+    echo "🌐 Accessible sur: $NGROK_URL"
+    echo "$NGROK_URL" > ngrok_url.txt
+else
+    echo "❌ Impossible de récupérer l'URL ngrok"
+    cat ngrok.log
+    exit 1
+fi
+'''
                 }
             }
         }
