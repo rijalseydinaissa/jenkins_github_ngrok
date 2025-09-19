@@ -2,11 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // Configuration Java et Maven
-        JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0' //la version de maven doit etre la meme dans les conf de jenkins
-        PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
-
         // Variables pour ngrok
         NGROK_TOKEN = credentials('ngrok-token')
         APP_PORT = '8080'
@@ -16,148 +11,312 @@ pipeline {
         CONTAINER_NAME = "mon-app-container"
     }
 
-    tools {
-        jdk 'JDK-21'
-        maven 'Maven-3.9.0'
-    }
-
-    stage('📥 Checkout') {
-        steps {
-            echo '🔄 Récupération du code source...'
-            checkout scm
-            script {
-                dir(env.WORKSPACE) {
-                    env.GIT_COMMIT_MSG = sh(
-                        script: 'git log -1 --pretty=%B',
-                        returnStdout: true
-                    ).trim()
-                }
-            }
-        }
-    }
-
-        stage('🔍 Analyse Environnement') {
+    stages {
+        stage('🔧 Environment Setup') {
             steps {
-                echo '🔍 Vérification de l\'environnement...'
+                echo '🔧 Configuration de l\'environnement...'
                 script {
-                    def javaVersion = sh(
-                        script: 'java -version 2>&1 | head -n 1',
-                        returnStdout: true
-                    ).trim()
+                    // Vérifier Docker
+                    try {
+                        sh 'docker --version'
+                        sh 'docker ps'
+                        echo '✅ Docker accessible'
+                    } catch (Exception e) {
+                        error '❌ Docker non accessible: ' + e.getMessage()
+                    }
 
-                    if (!javaVersion.contains('21')) {
-                        error("❌ Java 21 requis, trouvé: ${javaVersion}")
+                    // Vérifier Java
+                    try {
+                        sh 'java -version'
+                        echo '✅ Java accessible'
+                    } catch (Exception e) {
+                        echo '⚠️ Java non configuré, installation automatique...'
+                        // Jenkins utilisera l'installation automatique
                     }
                 }
+            }
+        }
+
+        stage('📥 Checkout') {
+            steps {
+                echo '🔄 Récupération du code source...'
+
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/rijalseydinaissa/jenkins_github_ngrok.git'
+                    ]],
+                    extensions: [
+                        [$class: 'CleanBeforeCheckout'],
+                        [$class: 'CleanCheckout']
+                    ]
+                ])
+
+                script {
+                    try {
+                        env.GIT_COMMIT_MSG = sh(
+                            script: 'git log -1 --pretty=%B',
+                            returnStdout: true
+                        ).trim()
+
+                        env.GIT_COMMIT_SHORT = sh(
+                            script: 'git rev-parse --short HEAD',
+                            returnStdout: true
+                        ).trim()
+                    } catch (Exception e) {
+                        env.GIT_COMMIT_MSG = "Manual build"
+                        env.GIT_COMMIT_SHORT = "manual"
+                    }
+                }
+            }
+        }
+
+        stage('🔍 Code Analysis') {
+            steps {
+                echo '🔍 Analyse du code...'
                 sh '''
-                    echo "Java Version:"
-                    java -version
-                    echo "JAVA_HOME: $JAVA_HOME"
-                    echo "Maven Version:"
-                    mvn -version
-                    echo "Git Version:"
-                    git --version
+                    echo "=== PROJECT STRUCTURE ==="
+                    ls -la
+                    echo "=== BUILD INFO ==="
                     echo "Build Number: ${BUILD_NUMBER}"
                     echo "Git Commit: ${GIT_COMMIT_MSG}"
+                    echo "Git Short: ${GIT_COMMIT_SHORT}"
+                    echo "=========================="
                 '''
-            }
-        }
 
-        stage('🧹 Clean') {
-            steps {
-                echo '🧹 Nettoyage...'
-                sh 'mvn clean'
-            }
-        }
-
-        stage('🔧 Compile') {
-            steps {
-                echo '🔧 Compilation...'
-                sh 'mvn compile -Dmaven.compiler.source=21 -Dmaven.compiler.target=21'
-            }
-        }
-
-        stage('📦 Package') {
-            steps {
-                echo '📦 Création du package...'
-                sh 'mvn package -DskipTests'
-                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                // Vérifier les fichiers essentiels
+                script {
+                    if (!fileExists('Dockerfile')) {
+                        error '❌ Dockerfile manquant'
+                    }
+                    if (!fileExists('pom.xml')) {
+                        error '❌ pom.xml manquant'
+                    }
+                    echo '✅ Fichiers de configuration présents'
+                }
             }
         }
 
         stage('🐳 Docker Build') {
             steps {
-                echo '🐳 Construction de l\'image Docker...'
+                echo '🐳 Construction avec Docker...'
                 script {
-                    sh '''
-                        docker stop ${CONTAINER_NAME} || true
-                        docker rm ${CONTAINER_NAME} || true
-                        docker rmi ${DOCKER_IMAGE} || true
-                    '''
-                    sh "docker build -t ${DOCKER_IMAGE} ${env.WORKSPACE}"
+                    try {
+                        // Nettoyage des ressources existantes
+                        sh '''
+                            echo "🧹 Nettoyage..."
+                            docker stop ${CONTAINER_NAME} 2>/dev/null || true
+                            docker rm ${CONTAINER_NAME} 2>/dev/null || true
+                            docker rmi ${DOCKER_IMAGE} 2>/dev/null || true
+                        '''
+
+                        // Build avec Docker (inclut Maven)
+                        echo "🔨 Construction de l'image Docker (avec build Maven intégré)..."
+                        sh "docker build -t ${DOCKER_IMAGE} ."
+
+                        // Vérifier l'image
+                        sh "docker images | grep ${DOCKER_IMAGE.split(':')[0]}"
+
+                    } catch (Exception e) {
+                        error "❌ Échec du build Docker: ${e.getMessage()}"
+                    }
                 }
             }
         }
 
-        stage('🚀 Deploy Local') {
+        stage('🚀 Deploy Application') {
             steps {
-                echo '🚀 Déploiement local...'
+                echo '🚀 Déploiement de l\'application...'
                 script {
-                    sh """
-                        docker run -d \
-                            --name ${CONTAINER_NAME} \
-                            -p ${APP_PORT}:${APP_PORT} \
-                            -e SPRING_PROFILES_ACTIVE=prod \
-                            ${DOCKER_IMAGE}
-                    """
+                    try {
+                        // Démarrer le conteneur
+                        sh """
+                            echo "🚀 Démarrage du conteneur..."
+                            docker run -d \\
+                                --name ${CONTAINER_NAME} \\
+                                -p ${APP_PORT}:${APP_PORT} \\
+                                --restart unless-stopped \\
+                                ${DOCKER_IMAGE}
+                        """
 
-                    sh '''
-                        echo "⏳ Attente du démarrage de l'application..."
-                        timeout=60
-                        while [ $timeout -gt 0 ]; do
-                            if curl -f http://localhost:8080/health > /dev/null 2>&1; then
-                                echo "✅ Application démarrée avec succès!"
-                                break
+                        // Vérifier le conteneur
+                        sh '''
+                            echo "🔍 Vérification du conteneur..."
+                            docker ps | grep ${CONTAINER_NAME}
+                        '''
+
+                        // Health check robuste
+                        sh '''
+                            echo "⏳ Test de démarrage de l'application..."
+                            timeout=120
+                            interval=5
+
+                            while [ $timeout -gt 0 ]; do
+                                echo "⏳ Vérification... (${timeout}s restantes)"
+
+                                # Essayer plusieurs endpoints
+                                if curl -f -m 10 http://localhost:8080/health > /dev/null 2>&1; then
+                                    echo "✅ Application prête (endpoint health)!"
+                                    curl -s http://localhost:8080/health
+                                    break
+                                elif curl -f -m 10 http://localhost:8080/ > /dev/null 2>&1; then
+                                    echo "✅ Application prête (endpoint racine)!"
+                                    break
+                                elif curl -f -m 10 http://localhost:8080/actuator/health > /dev/null 2>&1; then
+                                    echo "✅ Application prête (actuator health)!"
+                                    break
+                                fi
+
+                                # Logs de débogage si problème
+                                if [ $timeout -le 60 ] && [ $((timeout % 20)) -eq 0 ]; then
+                                    echo "📋 Logs du conteneur (dernières 5 lignes):"
+                                    docker logs ${CONTAINER_NAME} --tail 5 2>/dev/null || true
+                                fi
+
+                                sleep $interval
+                                timeout=$((timeout-interval))
+                            done
+
+                            if [ $timeout -le 0 ]; then
+                                echo "❌ Timeout: Application non accessible"
+                                echo "📋 Logs complets du conteneur:"
+                                docker logs ${CONTAINER_NAME} 2>/dev/null || true
+                                echo "📋 Statut du conteneur:"
+                                docker ps -a | grep ${CONTAINER_NAME} || true
+                                exit 1
                             fi
-                            echo "⏳ En attente... ($timeout secondes restantes)"
-                            sleep 5
-                            timeout=$((timeout-5))
-                        done
+                        '''
 
-                        if [ $timeout -le 0 ]; then
-                            echo "❌ Timeout: L'application n'a pas démarré dans les temps"
-                            exit 1
-                        fi
-                    '''
+                    } catch (Exception e) {
+                        echo "❌ Erreur de déploiement: ${e.getMessage()}"
+                        sh '''
+                            echo "📋 Diagnostic d'erreur:"
+                            docker logs ${CONTAINER_NAME} 2>/dev/null || echo "Pas de logs disponibles"
+                            docker ps -a | grep ${CONTAINER_NAME} || echo "Conteneur non trouvé"
+                        '''
+                        throw e
+                    }
                 }
             }
         }
 
-        stage('🌐 Expose via ngrok') {
+        stage('🌐 Expose with ngrok') {
             steps {
-                echo '🌐 Exposition via ngrok...'
+                echo '🌐 Exposition publique via ngrok...'
                 script {
-                    sh 'pkill ngrok || true'
-                    sh 'ngrok config add-authtoken $NGROK_TOKEN'
-                    sh 'nohup ngrok http 8080 --log=stdout > ngrok.log 2>&1 &'
+                    try {
+                        // Nettoyage ngrok
+                        sh '''
+                            echo "🧹 Arrêt des processus ngrok existants..."
+                            pkill ngrok 2>/dev/null || true
+                            sleep 5
+                        '''
 
-                    sh '''
-                        echo "⏳ Démarrage de ngrok..."
-                        sleep 10
+                        // Configuration ngrok
+                        sh '''
+                            echo "🔧 Configuration ngrok..."
+                            ngrok config add-authtoken $NGROK_TOKEN
+                        '''
 
-                        NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
+                        // Démarrage ngrok
+                        sh '''
+                            echo "🚀 Démarrage ngrok..."
+                            nohup ngrok http 8080 --log=stdout > ngrok.log 2>&1 &
+                            echo "⏳ Attente du démarrage ngrok..."
+                            sleep 15
+                        '''
 
-                        if [ -n "$NGROK_URL" ]; then
-                            echo "🌐 Application accessible sur: $NGROK_URL"
-                            echo "✅ Health check: $NGROK_URL/health"
-                            echo "👋 Test endpoint: $NGROK_URL/hello/Jenkins"
-                            echo "$NGROK_URL" > ngrok_url.txt
-                        else
-                            echo "❌ Erreur: Impossible de récupérer l'URL ngrok"
-                            cat ngrok.log
-                            exit 1
-                        fi
-                    '''
+                        // Récupération URL avec retry
+                        sh '''
+                            attempts=0
+                            max_attempts=6
+
+                            while [ $attempts -lt $max_attempts ]; do
+                                attempts=$((attempts+1))
+                                echo "🔍 Tentative $attempts/$max_attempts..."
+
+                                # Vérifier l'API ngrok
+                                if ! curl -s http://localhost:4040/api/tunnels >/dev/null 2>&1; then
+                                    echo "⚠️ API ngrok non accessible, attente..."
+                                    sleep 10
+                                    continue
+                                fi
+
+                                # Récupérer l'URL
+                                NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"https://[^"]*' | cut -d '"' -f 4 | head -n 1)
+
+                                if [ -n "$NGROK_URL" ]; then
+                                    echo "🌐 URL publique trouvée: $NGROK_URL"
+
+                                    # Test de l'URL
+                                    if curl -f -m 30 "$NGROK_URL/" >/dev/null 2>&1; then
+                                        echo "✅ URL ngrok fonctionnelle!"
+                                        echo "🌐 Application accessible: $NGROK_URL"
+                                        echo "🔗 Endpoints disponibles:"
+                                        echo "  - Accueil: $NGROK_URL/"
+                                        echo "  - Health: $NGROK_URL/health"
+                                        echo "  - Hello: $NGROK_URL/hello/Jenkins"
+
+                                        # Sauvegarder l'URL
+                                        echo "$NGROK_URL" > ngrok_url.txt
+                                        break
+                                    else
+                                        echo "⚠️ URL trouvée mais non accessible, retry..."
+                                    fi
+                                else
+                                    echo "⚠️ URL non trouvée, retry..."
+                                fi
+
+                                sleep 10
+                            done
+
+                            if [ $attempts -eq $max_attempts ]; then
+                                echo "❌ Impossible de configurer ngrok"
+                                echo "📋 Logs ngrok:"
+                                cat ngrok.log 2>/dev/null || echo "Pas de logs"
+                                echo "📋 API ngrok:"
+                                curl -s http://localhost:4040/api/tunnels 2>/dev/null || echo "API non accessible"
+                                exit 1
+                            fi
+                        '''
+
+                    } catch (Exception e) {
+                        echo "❌ Erreur ngrok: ${e.getMessage()}"
+                        sh '''
+                            echo "📋 Diagnostic ngrok:"
+                            cat ngrok.log 2>/dev/null || echo "Pas de logs ngrok"
+                            ps aux | grep ngrok || echo "Pas de processus ngrok"
+                            netstat -tlnp | grep 4040 || echo "Port 4040 non ouvert"
+                        '''
+                        throw e
+                    }
+                }
+            }
+        }
+
+        stage('🧪 Integration Tests') {
+            steps {
+                echo '🧪 Tests d\'intégration...'
+                script {
+                    def ngrokUrl = ""
+                    try {
+                        ngrokUrl = readFile('ngrok_url.txt').trim()
+                    } catch (Exception e) {
+                        error "❌ URL ngrok non disponible pour les tests"
+                    }
+
+                    sh """
+                        echo "🧪 Tests sur: ${ngrokUrl}"
+
+                        echo "🧪 Test endpoint principal..."
+                        curl -f -m 30 "${ngrokUrl}/" -o /dev/null -s || exit 1
+
+                        echo "🧪 Test endpoint hello..."
+                        curl -f -m 30 "${ngrokUrl}/hello/CI-CD-Test" -o /dev/null -s || exit 1
+
+                        echo "✅ Tous les tests passés!"
+                    """
                 }
             }
         }
@@ -167,60 +326,64 @@ pipeline {
         always {
             echo '🧹 Nettoyage final...'
             script {
-                archiveArtifacts artifacts: '*.log', allowEmptyArchive: true
-                cleanWs()
+                // Archiver les logs
+                archiveArtifacts(
+                    artifacts: '*.log',
+                    allowEmptyArchive: true
+                )
+
+                // Mettre à jour la description du build
+                try {
+                    def ngrokUrl = readFile('ngrok_url.txt').trim()
+                    currentBuild.description = "🌐 <a href='${ngrokUrl}'>${ngrokUrl}</a>"
+                } catch (Exception e) {
+                    currentBuild.description = "❌ URL non disponible"
+                }
             }
         }
 
         success {
-            echo '✅ Pipeline exécuté avec succès!'
+            echo '✅ Déploiement réussi!'
             script {
-                def ngrokUrl = ""
+                def ngrokUrl = "Non disponible"
                 try {
                     ngrokUrl = readFile('ngrok_url.txt').trim()
                 } catch (Exception e) {
-                    ngrokUrl = "URL non disponible"
+                    echo "⚠️ URL ngrok non récupérable"
                 }
 
-                emailext (
-                    subject: "✅ Déploiement réussi - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                    body: """
-                        <h2>🎉 Déploiement réussi!</h2>
-                        <p><strong>Projet:</strong> ${env.JOB_NAME}</p>
-                        <p><strong>Build:</strong> #${env.BUILD_NUMBER}</p>
-                        <p><strong>Commit:</strong> ${env.GIT_COMMIT_MSG}</p>
-                        <p><strong>URL publique:</strong> <a href="${ngrokUrl}">${ngrokUrl}</a></p>
-                        <p><strong>Endpoints disponibles:</strong></p>
-                        <ul>
-                            <li><a href="${ngrokUrl}/">Accueil</a></li>
-                            <li><a href="${ngrokUrl}/health">Health Check</a></li>
-                            <li><a href="${ngrokUrl}/hello/World">Hello World</a></li>
-                        </ul>
-                    """,
-                    to: '${DEFAULT_RECIPIENTS}',
-                    mimeType: 'text/html'
-                )
+                echo """
+==========================================
+🎉 DÉPLOIEMENT RÉUSSI!
+==========================================
+🌐 URL publique: ${ngrokUrl}
+📱 Endpoints:
+   • Accueil: ${ngrokUrl}/
+   • Health: ${ngrokUrl}/health
+   • Hello: ${ngrokUrl}/hello/World
+💼 Build: #${BUILD_NUMBER}
+📝 Commit: ${env.GIT_COMMIT_SHORT} - ${env.GIT_COMMIT_MSG}
+==========================================
+                """
             }
         }
 
         failure {
-            echo '❌ Échec du pipeline'
-            emailext (
-                subject: "❌ Échec du déploiement - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                body: """
-                    <h2>❌ Échec du déploiement</h2>
-                    <p><strong>Projet:</strong> ${env.JOB_NAME}</p>
-                    <p><strong>Build:</strong> #${env.BUILD_NUMBER}</p>
-                    <p><strong>Commit:</strong> ${env.GIT_COMMIT_MSG}</p>
-                    <p><strong>Console:</strong> <a href="${env.BUILD_URL}console">Voir les logs</a></p>
-                """,
-                to: '${DEFAULT_RECIPIENTS}',
-                mimeType: 'text/html'
-            )
-        }
-
-        unstable {
-            echo '⚠️ Build instable'
+            echo '❌ Déploiement échoué'
+            script {
+                sh '''
+                    echo "=== DIAGNOSTIC D'ÉCHEC ==="
+                    echo "Conteneurs Docker:"
+                    docker ps -a || true
+                    echo "Images Docker:"
+                    docker images || true
+                    echo "Processus:"
+                    ps aux | grep -E "(java|ngrok)" || true
+                    echo "Ports ouverts:"
+                    netstat -tlnp | grep -E "(8080|4040)" || true
+                    echo "=========================="
+                '''
+            }
         }
     }
 }
