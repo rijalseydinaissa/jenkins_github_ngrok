@@ -1,10 +1,14 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout()  // Évite le checkout implicite, car géré manuellement
+    }
+
     environment {
         // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0' //la version de maven doit etre la meme dans les conf de jenkins sinon y'aura erreur
+        MAVEN_HOME = tool 'Maven-3.9.0' // La version de Maven doit être la même dans les conf de Jenkins sinon y'aura erreur
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
         // Variables pour ngrok
@@ -21,19 +25,20 @@ pipeline {
         maven 'Maven-3.9.0'
     }
 
-   stage('📥 Checkout') {
-       steps {
-           echo '🔄 Récupération du code source...'  // Optionnel, car déjà fait
-           script {
-               // Pas besoin de dir(env.WORKSPACE) – on y est déjà
-               env.GIT_COMMIT_MSG = sh(
-                   script: 'git log -1 --pretty=%B',
-                   returnStdout: true
-               ).trim()
-               echo "Commit message: ${env.GIT_COMMIT_MSG}"
-           }
-       }
-   }
+    stages {  // ← AJOUTÉ : Bloc obligatoire pour envelopper tous les stages
+        stage('📥 Checkout') {
+            steps {
+                echo '🔄 Récupération du code source...'  // Optionnel, car déjà fait
+                script {
+                    // Pas besoin de dir(env.WORKSPACE) – on y est déjà
+                    env.GIT_COMMIT_MSG = sh(
+                        script: 'git log -1 --pretty=%B',
+                        returnStdout: true
+                    ).trim()
+                    echo "Commit message: ${env.GIT_COMMIT_MSG}"
+                }
+            }
+        }
 
         stage('🔍 Analyse Environnement') {
             steps {
@@ -160,7 +165,7 @@ pipeline {
                 }
             }
         }
-    }
+    }  // ← FERME le bloc stages
 
     post {
         always {
