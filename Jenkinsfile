@@ -2,16 +2,13 @@ pipeline {
     agent any
 
     environment {
-        // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
         MAVEN_HOME = tool 'Maven-3.9.0'
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
-        // Variables pour ngrok
         NGROK_TOKEN = credentials('ngrok-token')
         APP_PORT = '8080'
 
-        // Variables Docker
         DOCKER_IMAGE = "mon-app-java:${BUILD_NUMBER}"
         CONTAINER_NAME = "mon-app-container"
     }
@@ -34,14 +31,6 @@ pipeline {
 
         stage('🔍 Analyse Environnement') {
             steps {
-                script {
-                    def javaVersion = sh(script: 'java -version 2>&1 | head -n 1', returnStdout: true).trim()
-                    if (!javaVersion.contains('21')) {
-                        error("❌ Java 21 requis, trouvé: ${javaVersion}")
-                    } else {
-                        echo "✅ Java version OK: ${javaVersion}"
-                    }
-                }
                 sh '''
 #!/bin/bash
 echo "Java Version:"
@@ -72,34 +61,29 @@ git --version
 
         stage('🐳 Docker Build') {
             steps {
-                script {
-                    sh '''
+                sh '''
 #!/bin/bash
-docker stop ${CONTAINER_NAME} || true
-docker rm ${CONTAINER_NAME} || true
-docker rmi ${DOCKER_IMAGE} || true
-docker build -t ${DOCKER_IMAGE} ${env.WORKSPACE}
+docker stop "${CONTAINER_NAME}" || true
+docker rm "${CONTAINER_NAME}" || true
+docker rmi "${DOCKER_IMAGE}" || true
+docker build -t "${DOCKER_IMAGE}" .
 '''
-                }
             }
         }
 
         stage('🚀 Deploy Local') {
             steps {
-                script {
-                    sh """
+                sh '''
 #!/bin/bash
-docker run -d \\
-    --name ${CONTAINER_NAME} \\
-    -p ${APP_PORT}:${APP_PORT} \\
-    -e SPRING_PROFILES_ACTIVE=prod \\
-    ${DOCKER_IMAGE}
-"""
-                    sh '''
-#!/bin/bash
+docker run -d \
+    --name "${CONTAINER_NAME}" \
+    -p "${APP_PORT}:${APP_PORT}" \
+    -e SPRING_PROFILES_ACTIVE=prod \
+    "${DOCKER_IMAGE}"
+
 timeout=60
 while [ $timeout -gt 0 ]; do
-    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
+    if curl -f http://localhost:${APP_PORT}/health > /dev/null 2>&1; then
         echo "✅ Application démarrée!"
         break
     fi
@@ -113,18 +97,16 @@ if [ $timeout -le 0 ]; then
     exit 1
 fi
 '''
-                }
             }
         }
 
         stage('🌐 Expose via ngrok') {
             steps {
-                script {
-                    sh '''
+                sh '''
 #!/bin/bash
 pkill ngrok || true
-ngrok config add-authtoken $NGROK_TOKEN
-nohup ngrok http ${APP_PORT} --log=stdout > ngrok.log 2>&1 &
+ngrok config add-authtoken "$NGROK_TOKEN"
+nohup ngrok http "${APP_PORT}" --log=stdout > ngrok.log 2>&1 &
 sleep 10
 
 NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
@@ -137,7 +119,6 @@ else
     exit 1
 fi
 '''
-                }
             }
         }
     }
