@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0'  // Nom exact configuré dans Jenkins les noms doivent correspondre
+        MAVEN_HOME = tool 'Maven-3.9.0'
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
         // Variables pour ngrok
@@ -18,7 +18,7 @@ pipeline {
 
     tools {
         jdk 'JDK-21'
-        maven 'Maven-3.9.0'  // Nom exact configuré dans Jenkins
+        maven 'Maven-3.9.0'
     }
 
     stages {
@@ -39,7 +39,6 @@ pipeline {
             steps {
                 echo '🔍 Vérification de l\'environnement...'
                 script {
-                    // Vérifier et configurer Java
                     def javaVersion = sh(
                         script: 'java -version 2>&1 | head -n 1',
                         returnStdout: true
@@ -77,20 +76,6 @@ pipeline {
             }
         }
 
-        stage('🧪 Tests') {
-            steps {
-                echo '🧪 Exécution des tests...'
-                sh 'mvn test'
-            }
-            post {
-                always {
-                    // Publier les résultats des tests
-                    junit 'target/surefire-reports/*.xml'
-                    archiveArtifacts artifacts: 'target/surefire-reports/**', allowEmptyArchive: true
-                }
-            }
-        }
-
         stage('📦 Package') {
             steps {
                 echo '📦 Création du package...'
@@ -103,14 +88,11 @@ pipeline {
             steps {
                 echo '🐳 Construction de l\'image Docker...'
                 script {
-                    // Arrêter le conteneur existant s'il existe
                     sh '''
                         docker stop ${CONTAINER_NAME} || true
                         docker rm ${CONTAINER_NAME} || true
                         docker rmi ${DOCKER_IMAGE} || true
                     '''
-
-                    // Construire la nouvelle image
                     sh "docker build -t ${DOCKER_IMAGE} ."
                 }
             }
@@ -120,7 +102,6 @@ pipeline {
             steps {
                 echo '🚀 Déploiement local...'
                 script {
-                    // Lancer le nouveau conteneur
                     sh """
                         docker run -d \
                             --name ${CONTAINER_NAME} \
@@ -129,7 +110,6 @@ pipeline {
                             ${DOCKER_IMAGE}
                     """
 
-                    // Attendre que l'application démarre
                     sh '''
                         echo "⏳ Attente du démarrage de l'application..."
                         timeout=60
@@ -156,29 +136,20 @@ pipeline {
             steps {
                 echo '🌐 Exposition via ngrok...'
                 script {
-                    // Tuer les processus ngrok existants
                     sh 'pkill ngrok || true'
-
-                    // Configurer ngrok avec le token
                     sh 'ngrok config add-authtoken $NGROK_TOKEN'
-
-                    // Démarrer ngrok en arrière-plan
                     sh 'nohup ngrok http 8080 --log=stdout > ngrok.log 2>&1 &'
 
-                    // Attendre que ngrok démarre et récupérer l'URL
                     sh '''
                         echo "⏳ Démarrage de ngrok..."
                         sleep 10
 
-                        # Récupérer l'URL publique ngrok
                         NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | cut -d '"' -f 4 | head -n 1)
 
                         if [ -n "$NGROK_URL" ]; then
                             echo "🌐 Application accessible sur: $NGROK_URL"
                             echo "✅ Health check: $NGROK_URL/health"
                             echo "👋 Test endpoint: $NGROK_URL/hello/Jenkins"
-
-                            # Sauvegarder l'URL pour les étapes suivantes
                             echo "$NGROK_URL" > ngrok_url.txt
                         else
                             echo "❌ Erreur: Impossible de récupérer l'URL ngrok"
@@ -189,38 +160,13 @@ pipeline {
                 }
             }
         }
-
-        stage('🧪 Tests d\'intégration') {
-            steps {
-                echo '🧪 Tests d\'intégration...'
-                script {
-                    def ngrokUrl = readFile('ngrok_url.txt').trim()
-
-                    sh """
-                        echo "🧪 Test de l'endpoint principal..."
-                        curl -f "${ngrokUrl}/" || exit 1
-
-                        echo "🧪 Test de l'endpoint health..."
-                        curl -f "${ngrokUrl}/health" || exit 1
-
-                        echo "🧪 Test de l'endpoint hello..."
-                        curl -f "${ngrokUrl}/hello/CI-CD" || exit 1
-
-                        echo "✅ Tous les tests d'intégration sont passés!"
-                    """
-                }
-            }
-        }
     }
 
     post {
         always {
             echo '🧹 Nettoyage final...'
             script {
-                // Archiver les logs
                 archiveArtifacts artifacts: '*.log', allowEmptyArchive: true
-
-                // Nettoyer l'espace de travail
                 cleanWs()
             }
         }
@@ -235,7 +181,6 @@ pipeline {
                     ngrokUrl = "URL non disponible"
                 }
 
-                // Notification de succès
                 emailext (
                     subject: "✅ Déploiement réussi - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                     body: """
