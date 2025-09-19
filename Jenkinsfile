@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Configuration Java et Maven
         JAVA_HOME = tool 'JDK-21'
-        MAVEN_HOME = tool 'Maven-3.9.0' //la version de maven doit etre la meme dans les conf de jenkins sinon y'aura erreur
+        MAVEN_HOME = tool 'Maven-3.9.0' //la version de maven doit etre la meme dans les conf de jenkins
         PATH = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${env.PATH}"
 
         // Variables pour ngrok
